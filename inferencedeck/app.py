@@ -89,6 +89,7 @@ def short_image(image: str) -> str:
 
 
 class ContainerItem(ListItem):
+    """Sidebar row for one container: status emoji, name and short image."""
     def __init__(self, info: ContainerInfo, pending: str | None = None) -> None:
         self.container_id = info.id
         self.info = info
@@ -99,16 +100,19 @@ class ContainerItem(ListItem):
 
     @staticmethod
     def render_label(info: ContainerInfo, pending: str | None = None) -> str:
+        """Label markup; a pending action replaces the emoji with ⏳."""
         status = f"⏳ {pending}" if pending else info.emoji
         return f"{status} [b]{escape(info.name)}[/]\n   [dim]{escape(short_image(info.image))}[/]"
 
     def set_info(self, info: ContainerInfo, pending: str | None = None) -> None:
+        """Update the row in place with new state."""
         self.info = info
         self.label.update(self.render_label(info, pending))
         self.set_class(pending is not None, "-pending")
 
 
 class InferenceDeckApp(App[str | None]):
+    """Main screen: container list, Details/Logs/Resources/Compose tabs and lifecycle actions."""
     TITLE = "InferenceDeck"
     SUB_TITLE = "vLLM · SGLang"
     CSS = CSS
@@ -180,6 +184,7 @@ class InferenceDeckApp(App[str | None]):
         yield Footer()
 
     def on_mount(self) -> None:
+        """Start polling Docker and the GPUs, and optionally check for updates."""
         self.query_one("#container-list", ListView).focus()
         self.refresh_containers()
         self.refresh_host()
@@ -189,9 +194,11 @@ class InferenceDeckApp(App[str | None]):
             self.quiet_update_check()
 
     def on_unmount(self) -> None:
+        """Stop the log stream on exit."""
         self._close_log_stream()
 
     def get_system_commands(self, screen: Screen) -> Iterable[SystemCommand]:
+        """Add InferenceDeck actions to the command palette."""
         yield from super().get_system_commands(screen)
         yield SystemCommand("Drafts", "Open the drafts editor", self.action_drafts)
         yield SystemCommand("Check for updates", "Pull the latest InferenceDeck", self.action_check_updates)
@@ -201,38 +208,46 @@ class InferenceDeckApp(App[str | None]):
 
     @property
     def container_names(self) -> list[str]:
+        """Names of all listed containers (used to flag name clashes in drafts)."""
         return [i.name for i in self._infos.values()]
 
     @property
     def list_view(self) -> ListView:
+        """The sidebar list widget."""
         return self.query_one("#container-list", ListView)
 
     def highlighted_info(self) -> ContainerInfo | None:
+        """Latest state of the container under the cursor, or None."""
         item = self.list_view.highlighted_child
         if isinstance(item, ContainerItem):
             return self._infos.get(item.container_id, item.info)
         return None
 
     def _item_for(self, container_id: str) -> ContainerItem | None:
+        """Sidebar row for a container ID, or None."""
         for item in self.list_view.query(ContainerItem):
             if item.container_id == container_id:
                 return item
         return None
 
     def _set_status(self, text: str) -> None:
+        """Set the status line under the sidebar."""
         self.query_one("#sidebar-status", Static).update(text)
 
     # -- discovery -----------------------------------------------------------------
 
     def action_refresh_containers(self) -> None:
+        """Key binding: rescan Docker now."""
         self.refresh_containers()
 
     def refresh_containers(self) -> None:
+        """Start a scan unless one is already running."""
         if not self._scan_running:  # never pile up scans behind a slow daemon
             self._scan_running = True
             self.run_worker(self._scan(), group="scan")
 
     async def _scan(self) -> None:
+        """List containers off the UI thread and apply the result; report Docker outages."""
         try:
             try:
                 infos = await asyncio.to_thread(self.backend.list_llm_containers)
@@ -251,6 +266,7 @@ class InferenceDeckApp(App[str | None]):
             self._scan_running = False
 
     async def _apply_scan(self, infos: list[ContainerInfo]) -> None:
+        """Update the sidebar, keeping the cursor on the same container."""
         lv = self.list_view
         before = self.highlighted_info()
         previous = self._infos
@@ -290,6 +306,7 @@ class InferenceDeckApp(App[str | None]):
             self.load_panels(after)
 
     def _show_empty(self) -> None:
+        """Show placeholders when there are no containers or Docker is down."""
         msg = "No vLLM / SGLang containers found." if self._docker_error is None else "Docker unavailable."
         self.query_one("#details", Static).update(msg)
         self.query_one("#resources", Static).update(msg)
@@ -298,11 +315,13 @@ class InferenceDeckApp(App[str | None]):
 
     @on(ListView.Highlighted, "#container-list")
     def _on_highlight(self, event: ListView.Highlighted) -> None:
+        """Cursor moved: load the tabs for that container."""
         if isinstance(event.item, ContainerItem):
             self.load_panels(self._infos.get(event.item.container_id, event.item.info))
 
     @on(ListView.Selected, "#container-list")
     def _on_select(self, event: ListView.Selected) -> None:
+        """Enter pressed: tail the container's logs."""
         if isinstance(event.item, ContainerItem):
             self.attach_logs(event.item.container_id)
             self.query_one(TabbedContent).active = "tab-logs"
@@ -320,6 +339,7 @@ class InferenceDeckApp(App[str | None]):
 
     @work(thread=True, exclusive=True, group="host")
     def refresh_host(self) -> None:
+        """Refresh GPU usage and running containers' GPU claims in the background."""
         snapshot = self.gpu_query()
         peers = []
         for info in list(self._infos.values()):
@@ -335,11 +355,13 @@ class InferenceDeckApp(App[str | None]):
     # -- panels --------------------------------------------------------------------
 
     def load_panels(self, info: ContainerInfo) -> None:
+        """Show basic details now and load the rest of the tabs in the background."""
         self.query_one("#details", Static).update(self._details_table(info, None))
         self._load_panels_worker(info)
 
     @work(thread=True, exclusive=True, group="panels")
     def _load_panels_worker(self, info: ContainerInfo) -> None:
+        """Inspect a container and render its Details, Resources and Compose tabs."""
         worker = get_current_worker()
         try:
             attrs = self._inspect(info)
@@ -371,6 +393,7 @@ class InferenceDeckApp(App[str | None]):
         self.call_from_thread(apply)
 
     def _details_table(self, info: ContainerInfo, attrs: dict[str, Any] | None) -> Table:
+        """Details tab content."""
         t = Table.grid(padding=(0, 2))
         t.add_column(style="bold cyan", no_wrap=True)
         t.add_column()
@@ -403,6 +426,7 @@ class InferenceDeckApp(App[str | None]):
         return t
 
     def _resources_view(self, report: Report, own_usage: dict[str, int]) -> Table:
+        """Resources tab content: engine, limits, host GPUs and checks."""
         outer = Table.grid(padding=(1, 0))
         outer.add_column()
 
@@ -446,6 +470,7 @@ class InferenceDeckApp(App[str | None]):
         return outer
 
     def _show_compose(self, info: ContainerInfo, compose: Any, run_cmd: str | None) -> None:
+        """Compose tab: the compose file if readable, else a reconstructed docker run."""
         meta = self.query_one("#compose-meta", Static)
         area = self.query_one("#compose-text", TextArea)
         if compose is not None and compose.readable:
@@ -476,6 +501,7 @@ class InferenceDeckApp(App[str | None]):
     # -- lifecycle actions -----------------------------------------------------------
 
     def _target(self) -> ContainerInfo | None:
+        """Highlighted container for an action, or None (with a notice) if none or busy."""
         info = self.highlighted_info()
         if info is None:
             self.notify("No container selected.", severity="warning")
@@ -486,6 +512,7 @@ class InferenceDeckApp(App[str | None]):
         return info
 
     def action_start(self) -> None:
+        """Key binding: start or unpause the highlighted container."""
         info = self._target()
         if info is None:
             return
@@ -495,6 +522,7 @@ class InferenceDeckApp(App[str | None]):
         self._run_action(info, "start")
 
     def action_stop(self) -> None:
+        """Key binding: stop the highlighted container after confirmation."""
         info = self._target()
         if info is None:
             return
@@ -507,6 +535,7 @@ class InferenceDeckApp(App[str | None]):
         )
 
     def action_restart(self) -> None:
+        """Key binding: restart the highlighted container after confirmation."""
         info = self._target()
         if info is None:
             return
@@ -516,6 +545,7 @@ class InferenceDeckApp(App[str | None]):
         )
 
     def _run_action(self, info: ContainerInfo, verb: str) -> None:
+        """Mark the container as pending and run the action in the background."""
         self._pending[info.id] = PENDING_LABEL[verb]
         item = self._item_for(info.id)
         if item is not None:
@@ -523,6 +553,7 @@ class InferenceDeckApp(App[str | None]):
         self.run_worker(self._do_action(info, verb), group=f"action-{info.id}")
 
     async def _do_action(self, info: ContainerInfo, verb: str) -> None:
+        """Run start/stop/restart off the UI thread, then refresh the row, tabs and logs."""
         try:
             fresh = await asyncio.to_thread(getattr(self.backend, verb), info.id)
         except (DockerException, DockerUnavailable) as exc:
@@ -545,6 +576,7 @@ class InferenceDeckApp(App[str | None]):
         self.refresh_containers()
 
     def _refresh_item(self, container_id: str) -> None:
+        """Redraw one sidebar row from current state."""
         item = self._item_for(container_id)
         info = self._infos.get(container_id)
         if item is not None and info is not None:
@@ -553,12 +585,14 @@ class InferenceDeckApp(App[str | None]):
     # -- logs ----------------------------------------------------------------------
 
     def action_attach_logs(self) -> None:
+        """Key binding: tail the highlighted container's logs."""
         info = self.highlighted_info()
         if info is not None:
             self.attach_logs(info.id)
             self.query_one(TabbedContent).active = "tab-logs"
 
     def _close_log_stream(self) -> None:
+        """Close the current log stream, unblocking its reader thread."""
         with self._log_lock:
             stream, self._log_stream = self._log_stream, None
         if stream is not None:
@@ -568,6 +602,7 @@ class InferenceDeckApp(App[str | None]):
                 pass
 
     def attach_logs(self, container_id: str) -> None:
+        """Switch the Logs tab to a container and start tailing it."""
         self._close_log_stream()
         self._log_container_id = container_id
         log = self.query_one("#log-output", Log)
@@ -578,6 +613,7 @@ class InferenceDeckApp(App[str | None]):
 
     @work(thread=True, exclusive=True, group="logs")
     def _stream_logs(self, container_id: str) -> None:
+        """Background thread: read the log stream and write complete lines to the Logs tab."""
         worker = get_current_worker()
         log = self.query_one("#log-output", Log)
         try:
@@ -611,11 +647,13 @@ class InferenceDeckApp(App[str | None]):
     # -- drafts --------------------------------------------------------------------
 
     def action_drafts(self, select_id: int | None = None) -> None:
+        """Key binding: open the drafts screen, optionally selecting a draft."""
         if isinstance(self.screen, DraftsScreen):
             return
         self.push_screen(DraftsScreen(self.store, select_id=select_id))
 
     def action_save_as_draft(self) -> None:
+        """Key binding: save the highlighted container as a draft."""
         info = self.highlighted_info()
         if info is None:
             self.notify("No container selected.", severity="warning")
@@ -624,6 +662,7 @@ class InferenceDeckApp(App[str | None]):
 
     @work(thread=True, exclusive=True, group="save-draft")
     def _prepare_draft(self, info: ContainerInfo) -> None:
+        """Build a draft from the container's compose file or a reconstructed docker run, then ask for a name."""
         try:
             attrs = self._inspect(info)
         except DockerException as exc:
@@ -676,6 +715,7 @@ class InferenceDeckApp(App[str | None]):
     # -- updates -------------------------------------------------------------------
 
     def action_check_updates(self) -> None:
+        """Key binding: open the update dialog; restart the app if asked."""
         def done(restart: bool | None) -> None:
             if restart:
                 self.exit("restart")
@@ -684,6 +724,7 @@ class InferenceDeckApp(App[str | None]):
 
     @work(thread=True, exclusive=True, group="update-check")
     def quiet_update_check(self) -> None:
+        """At most once a day, check for updates and show a notice if any."""
         try:
             last = float(self.store.get_meta("last_update_check", "0") or 0)
         except ValueError:

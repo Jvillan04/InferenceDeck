@@ -34,6 +34,7 @@ def is_llm_container(name: str, image: str) -> bool:
 
 
 def detect_engine(*texts: str) -> str | None:
+    """Return 'sglang' or 'vllm' if either name appears in the given texts, else None."""
     haystack = " ".join(texts).lower()
     if "sglang" in haystack:
         return "sglang"
@@ -44,6 +45,7 @@ def detect_engine(*texts: str) -> str | None:
 
 @dataclass(frozen=True)
 class ContainerInfo:
+    """Snapshot of one container's state, as shown in the sidebar and Details tab."""
     id: str
     name: str
     image: str
@@ -56,18 +58,22 @@ class ContainerInfo:
 
     @property
     def short_id(self) -> str:
+        """First 12 characters of the container ID, as docker prints it."""
         return self.id[:12]
 
     @property
     def emoji(self) -> str:
+        """Status emoji for the container's state (🔴 for anything not listed)."""
         return STATE_EMOJI.get(self.state, "🔴")
 
     @property
     def engine(self) -> str | None:
+        """Inference engine guessed from the image, name and command."""
         return detect_engine(self.image, self.name, self.command)
 
     @property
     def compose_project(self) -> str | None:
+        """Compose project name from the container's labels, if any."""
         return self.labels.get("com.docker.compose.project")
 
     @classmethod
@@ -126,6 +132,7 @@ class DockerBackend:
 
     @property
     def client(self) -> Any:
+        """Docker client, connected on first use; raises DockerUnavailable if the daemon is down."""
         with self._lock:
             if self._client is None:
                 try:
@@ -136,6 +143,7 @@ class DockerBackend:
 
     def _reset_on_failure(self, exc: Exception) -> None:
         # Drop the client so the next call reconnects (daemon restarted, socket changed...).
+        """Forget the client after a connection error so the next call reconnects."""
         if isinstance(exc, DockerException) and not isinstance(exc, docker.errors.APIError):
             with self._lock:
                 self._client = None
@@ -143,6 +151,7 @@ class DockerBackend:
     # -- discovery -----------------------------------------------------------------
 
     def list_llm_containers(self) -> list[ContainerInfo]:
+        """All vLLM/SGLang containers (any state), sorted by name, from one API call."""
         try:
             entries = self.client.api.containers(all=True)
         except DockerException as exc:
@@ -153,6 +162,7 @@ class DockerBackend:
         return sorted(infos, key=lambda i: i.name.lower())
 
     def inspect(self, container_id: str) -> dict[str, Any]:
+        """Full `docker inspect` payload for a container."""
         return self.client.api.inspect_container(container_id)
 
     def image_env(self, image: str) -> list[str]:
@@ -183,10 +193,12 @@ class DockerBackend:
     # -- lifecycle -----------------------------------------------------------------
 
     def _fresh(self, container: Any) -> ContainerInfo:
+        """Reload a container and return its current state."""
         container.reload()
         return ContainerInfo.from_inspect(container.attrs)
 
     def start(self, container_id: str) -> ContainerInfo:
+        """Start a stopped container, or unpause a paused one."""
         container = self.client.containers.get(container_id)
         if container.status == "paused":
             container.unpause()
@@ -195,11 +207,13 @@ class DockerBackend:
         return self._fresh(container)
 
     def stop(self, container_id: str, timeout: int = 30) -> ContainerInfo:
+        """Stop a container, waiting up to `timeout` seconds before killing it."""
         container = self.client.containers.get(container_id)
         container.stop(timeout=timeout)
         return self._fresh(container)
 
     def restart(self, container_id: str, timeout: int = 30) -> ContainerInfo:
+        """Restart a container (stop, then start)."""
         container = self.client.containers.get(container_id)
         container.restart(timeout=timeout)
         return self._fresh(container)

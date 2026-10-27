@@ -14,16 +14,19 @@ _UNSET = object()
 
 
 def default_db_path() -> Path:
+    """Default database location: $XDG_DATA_HOME/inferencedeck/inferencedeck.db."""
     base = os.environ.get("XDG_DATA_HOME") or os.path.join(os.path.expanduser("~"), ".local", "share")
     return Path(base) / "inferencedeck" / "inferencedeck.db"
 
 
 def _now() -> str:
+    """Current UTC time as an ISO-8601 string."""
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 @dataclass(frozen=True)
 class Draft:
+    """A saved `docker run` command or compose file."""
     id: int
     name: str
     kind: str
@@ -37,6 +40,7 @@ class Draft:
 
 @dataclass(frozen=True)
 class Revision:
+    """One saved version of a draft's body."""
     id: int
     draft_id: int
     body: str
@@ -45,6 +49,7 @@ class Revision:
 
 @dataclass(frozen=True)
 class Launch:
+    """One attempt to launch a draft, with its exit code and output."""
     id: int
     draft_id: int | None
     revision_id: int | None
@@ -92,6 +97,7 @@ SCHEMA_VERSION = len(MIGRATIONS)
 
 
 class DraftStore:
+    """Thread-safe SQLite store for drafts, their revisions and launch history."""
     def __init__(self, path: str | Path | None = None) -> None:
         self.path = Path(path) if path is not None else default_db_path()
         if str(self.path) != ":memory:":
@@ -106,6 +112,7 @@ class DraftStore:
 
     @property
     def schema_version(self) -> int:
+        """Schema version stored in the database (PRAGMA user_version)."""
         return self._conn.execute("PRAGMA user_version").fetchone()[0]
 
     def migrate(self) -> int:
@@ -122,17 +129,20 @@ class DraftStore:
             return SCHEMA_VERSION - current
 
     def close(self) -> None:
+        """Close the database connection."""
         with self._lock:
             self._conn.close()
 
     # -- meta ----------------------------------------------------------------------
 
     def get_meta(self, key: str, default: str | None = None) -> str | None:
+        """Read an app setting from the meta table."""
         with self._lock:
             row = self._conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
         return row["value"] if row else default
 
     def set_meta(self, key: str, value: str) -> None:
+        """Write an app setting to the meta table."""
         with self._lock, self._conn:
             self._conn.execute(
                 "INSERT INTO meta(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -142,21 +152,25 @@ class DraftStore:
     # -- drafts --------------------------------------------------------------------
 
     def list_drafts(self) -> list[Draft]:
+        """All drafts, most recently updated first."""
         with self._lock:
             rows = self._conn.execute("SELECT * FROM drafts ORDER BY updated_at DESC, name").fetchall()
         return [Draft(**dict(r)) for r in rows]
 
     def get(self, draft_id: int) -> Draft | None:
+        """Draft by ID, or None."""
         with self._lock:
             row = self._conn.execute("SELECT * FROM drafts WHERE id = ?", (draft_id,)).fetchone()
         return Draft(**dict(row)) if row else None
 
     def get_by_name(self, name: str) -> Draft | None:
+        """Draft by name, or None."""
         with self._lock:
             row = self._conn.execute("SELECT * FROM drafts WHERE name = ?", (name,)).fetchone()
         return Draft(**dict(row)) if row else None
 
     def unique_name(self, base: str) -> str:
+        """`base`, or `base-2`, `base-3`, ... if the name is taken."""
         base = base.strip() or "draft"
         name, n = base, 2
         while self.get_by_name(name) is not None:
@@ -174,6 +188,7 @@ class DraftStore:
         notes: str = "",
         source_container: str | None = None,
     ) -> Draft:
+        """Create a draft and record its first revision."""
         if kind not in KINDS:
             raise ValueError(f"kind must be one of {KINDS}")
         name = name.strip()
@@ -223,11 +238,13 @@ class DraftStore:
         return self.get(draft_id)  # type: ignore[return-value]
 
     def rename(self, draft_id: int, name: str) -> Draft:
+        """Rename a draft."""
         with self._lock, self._conn:
             self._conn.execute("UPDATE drafts SET name = ?, updated_at = ? WHERE id = ?", (name.strip(), _now(), draft_id))
         return self.get(draft_id)  # type: ignore[return-value]
 
     def duplicate(self, draft_id: int, name: str | None = None) -> Draft:
+        """Copy a draft under a new (or auto-generated) name."""
         src = self.get(draft_id)
         if src is None:
             raise KeyError(draft_id)
@@ -241,12 +258,14 @@ class DraftStore:
         )
 
     def delete(self, draft_id: int) -> None:
+        """Delete a draft with its revisions and launch history."""
         with self._lock, self._conn:
             self._conn.execute("DELETE FROM drafts WHERE id = ?", (draft_id,))
 
     # -- revisions -----------------------------------------------------------------
 
     def revisions(self, draft_id: int) -> list[Revision]:
+        """A draft's revisions, newest first."""
         with self._lock:
             rows = self._conn.execute(
                 "SELECT * FROM draft_revisions WHERE draft_id = ? ORDER BY id DESC", (draft_id,)
@@ -254,12 +273,14 @@ class DraftStore:
         return [Revision(**dict(r)) for r in rows]
 
     def latest_revision(self, draft_id: int) -> Revision | None:
+        """A draft's newest revision, or None."""
         revs = self.revisions(draft_id)
         return revs[0] if revs else None
 
     # -- launches ------------------------------------------------------------------
 
     def start_launch(self, draft_id: int) -> int:
+        """Record that a draft's latest revision is being launched; returns the launch ID."""
         rev = self.latest_revision(draft_id)
         with self._lock, self._conn:
             cur = self._conn.execute(
@@ -269,6 +290,7 @@ class DraftStore:
         return cur.lastrowid  # type: ignore[return-value]
 
     def finish_launch(self, launch_id: int, exit_code: int, output_tail: str) -> None:
+        """Store a launch's exit code and the tail of its output."""
         with self._lock, self._conn:
             self._conn.execute(
                 "UPDATE launches SET finished_at = ?, exit_code = ?, output_tail = ? WHERE id = ?",
@@ -276,6 +298,7 @@ class DraftStore:
             )
 
     def launches(self, draft_id: int) -> list[Launch]:
+        """A draft's launch history, newest first."""
         with self._lock:
             rows = self._conn.execute(
                 "SELECT * FROM launches WHERE draft_id = ? ORDER BY id DESC", (draft_id,)

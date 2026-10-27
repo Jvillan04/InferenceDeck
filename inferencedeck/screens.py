@@ -49,10 +49,12 @@ def set_language(area: TextArea, language: str | None) -> None:
 
 
 def language_for(kind: str) -> str:
+    """Syntax highlighting language for a draft kind."""
     return "yaml" if kind == "compose" else "bash"
 
 
 def render_reports(reports: list[Report]) -> Text:
+    """Lint reports as styled text, one block per report."""
     text = Text()
     for i, report in enumerate(reports):
         if i:
@@ -71,6 +73,7 @@ def render_reports(reports: list[Report]) -> Text:
 
 
 class ConfirmScreen(ModalScreen[bool]):
+    """Yes/No dialog; returns True if confirmed."""
     BINDINGS = [
         Binding("y", "answer(True)", "Yes"),
         Binding("n,escape", "answer(False)", "No"),
@@ -90,6 +93,7 @@ class ConfirmScreen(ModalScreen[bool]):
                 yield Button("Cancel (n)", id="no")
 
     def on_mount(self) -> None:
+        """Focus Cancel so an accidental Enter doesn't confirm."""
         self.query_one("#no", Button).focus()
 
     @on(Button.Pressed)
@@ -101,6 +105,7 @@ class ConfirmScreen(ModalScreen[bool]):
 
 
 class PromptScreen(ModalScreen["str | None"]):
+    """Single text input dialog; returns the text, or None if cancelled."""
     BINDINGS = [Binding("escape", "cancel", "Cancel")]
 
     def __init__(self, title: str, value: str = "", placeholder: str = "") -> None:
@@ -158,6 +163,7 @@ class DraftFormScreen(ModalScreen["dict[str, Any] | None"]):
     @on(Input.Submitted)
     @on(Button.Pressed, "#create")
     def _submit(self) -> None:
+        """Validate and return the form values."""
         name = self.query_one("#name", Input).value.strip()
         if not name:
             self.notify("Name is required.", severity="warning")
@@ -199,9 +205,11 @@ class RevisionsScreen(ModalScreen["str | None"]):
             yield Footer()
 
     def on_mount(self) -> None:
+        """Preview the newest revision."""
         self._preview(0)
 
     def _preview(self, index: int | None) -> None:
+        """Show a revision's diff against the editor, or its full text."""
         if index is None or not self.revisions:
             return
         rev = self.revisions[index]
@@ -217,15 +225,18 @@ class RevisionsScreen(ModalScreen["str | None"]):
 
     @on(ListView.Highlighted, "#rev-list")
     def _highlighted(self, event: ListView.Highlighted) -> None:
+        """Preview the revision under the cursor."""
         self._preview(event.list_view.index)
 
     @on(ListView.Selected, "#rev-list")
     def action_restore(self) -> None:
+        """Return the highlighted revision's body to the editor."""
         index = self.query_one("#rev-list", ListView).index
         if index is not None and self.revisions:
             self.dismiss(self.revisions[index].body)
 
     def action_toggle_diff(self) -> None:
+        """Switch between diff and full-text preview."""
         self.show_diff = not self.show_diff
         self._preview(self.query_one("#rev-list", ListView).index)
 
@@ -249,10 +260,12 @@ class UpdateScreen(ModalScreen[bool]):
                 yield Button("Close", id="close")
 
     def on_mount(self) -> None:
+        """Check for updates as soon as the dialog opens."""
         self.check()
 
     @work(thread=True, exclusive=True, group="update")
     def check(self) -> None:
+        """Fetch and show available commits; enable Update if there are any."""
         status = updater.check_for_updates()
         lines = [f"Installed: {updater.version_string()}", status.summary()]
         if status.dirty:
@@ -270,6 +283,7 @@ class UpdateScreen(ModalScreen[bool]):
 
     @work(thread=True, exclusive=True, group="update")
     def apply(self) -> None:
+        """Run the updater, streaming its output; offer a restart on success."""
         log = self.query_one("#update-log", Log)
         self.app.call_from_thread(log.clear)
         code = updater.apply_update(on_line=lambda line: self.app.call_from_thread(log.write_line, line))
@@ -291,6 +305,7 @@ class UpdateScreen(ModalScreen[bool]):
 
 
 class DraftItem(ListItem):
+    """Drafts list row: kind icon, name, last update, and ● when unsaved."""
     def __init__(self, draft: Draft, dirty: bool) -> None:
         self.draft_id = draft.id
         self.label = Label(self.render_label(draft, dirty))
@@ -298,14 +313,17 @@ class DraftItem(ListItem):
 
     @staticmethod
     def render_label(draft: Draft, dirty: bool) -> str:
+        """Label markup for a draft row."""
         mark = "[bold yellow]●[/] " if dirty else ""
         return f"{mark}{KIND_ICON.get(draft.kind, '')} {escape(draft.name)}\n   [dim]{draft.updated_at.replace('T', ' ')[:16]}[/]"
 
     def refresh_label(self, draft: Draft, dirty: bool) -> None:
+        """Redraw the row (e.g. after saving or editing)."""
         self.label.update(self.render_label(draft, dirty))
 
 
 class DraftsScreen(Screen):
+    """Drafts list and editor with live lint, revision history and launching."""
     BINDINGS = [
         Binding("escape", "back", "Back", priority=True),  # beats TextArea's escape-to-unfocus
         Binding("ctrl+s", "save", "Save"),
@@ -331,6 +349,7 @@ class DraftsScreen(Screen):
 
     @property
     def deck(self) -> "InferenceDeckApp":
+        """The main app, for GPU state and the list of containers."""
         return self.app  # type: ignore[return-value]
 
     def compose(self) -> ComposeResult:
@@ -357,6 +376,7 @@ class DraftsScreen(Screen):
     # -- list ----------------------------------------------------------------------
 
     async def reload_list(self, select_id: int | None = None) -> None:
+        """Reload drafts from the database and select one."""
         drafts = self.store.list_drafts()
         self._drafts = {d.id: d for d in drafts}
         lv = self.query_one("#draft-list", ListView)
@@ -372,6 +392,7 @@ class DraftsScreen(Screen):
         self._show(ids[lv.index])
 
     def _refresh_item(self, draft_id: int) -> None:
+        """Redraw one draft row."""
         draft = self._drafts.get(draft_id)
         for item in self.query(DraftItem):
             if item.draft_id == draft_id and draft is not None:
@@ -379,16 +400,19 @@ class DraftsScreen(Screen):
 
     @on(ListView.Highlighted, "#draft-list")
     def _on_highlight(self, event: ListView.Highlighted) -> None:
+        """Open the draft under the cursor in the editor."""
         if isinstance(event.item, DraftItem) and event.item.draft_id != self._current_id:
             self._show(event.item.draft_id)
 
     @on(ListView.Selected, "#draft-list")
     def _on_select(self) -> None:
+        """Enter on a draft: move focus to the editor."""
         self.query_one("#editor", TextArea).focus()
 
     # -- editor --------------------------------------------------------------------
 
     def _show(self, draft_id: int | None) -> None:
+        """Load a draft (or its unsaved edits) into the editor."""
         editor = self.query_one("#editor", TextArea)
         self._current_id = draft_id
         draft = self._drafts.get(draft_id) if draft_id is not None else None
@@ -407,6 +431,7 @@ class DraftsScreen(Screen):
         self.call_after_refresh(setattr, self, "_loading", False)
 
     def _update_title(self) -> None:
+        """Title line: name, kind, working dir, source container, unsaved marker."""
         draft = self._drafts.get(self._current_id) if self._current_id is not None else None
         if draft is None:
             return
@@ -419,6 +444,7 @@ class DraftsScreen(Screen):
 
     @on(TextArea.Changed, "#editor")
     def _on_edit(self) -> None:
+        """Track unsaved edits and re-lint shortly after typing stops."""
         if self._loading or self._current_id is None:
             return
         draft = self._drafts[self._current_id]
@@ -436,6 +462,7 @@ class DraftsScreen(Screen):
         self._lint_timer = self.set_timer(0.4, self._lint_now)
 
     def _lint_reports(self) -> list[Report]:
+        """Lint the editor contents against current GPU state and containers."""
         draft = self._drafts[self._current_id]  # type: ignore[index]
         text = self.query_one("#editor", TextArea).text
         return lint_draft(
@@ -447,6 +474,7 @@ class DraftsScreen(Screen):
         )
 
     def _lint_now(self) -> None:
+        """Re-run lint and show the results."""
         if self._current_id is None or self._current_id not in self._drafts:
             return
         self.query_one("#lint", Static).update(render_reports(self._lint_reports()))
@@ -454,6 +482,7 @@ class DraftsScreen(Screen):
     # -- actions -------------------------------------------------------------------
 
     def action_save(self) -> None:
+        """Save the editor contents as a new revision."""
         if self._current_id is None:
             return
         text = self.query_one("#editor", TextArea).text
@@ -465,6 +494,7 @@ class DraftsScreen(Screen):
         self.notify(f"Saved '{draft.name}' (revision {len(self.store.revisions(draft.id))}).")
 
     def action_new(self) -> None:
+        """Create a draft from a template."""
         def created(result: dict[str, Any] | None) -> None:
             if not result:
                 return
@@ -482,6 +512,7 @@ class DraftsScreen(Screen):
         self.app.push_screen(DraftFormScreen(), created)
 
     async def action_duplicate(self) -> None:
+        """Copy the current draft, unsaved edits included."""
         if self._current_id is None:
             return
         copy = self.store.duplicate(self._current_id)
@@ -491,6 +522,7 @@ class DraftsScreen(Screen):
         self.notify(f"Duplicated as '{copy.name}'.")
 
     def action_delete(self) -> None:
+        """Delete the current draft after confirmation."""
         if self._current_id is None:
             return
         draft = self._drafts[self._current_id]
@@ -509,6 +541,7 @@ class DraftsScreen(Screen):
         )
 
     def action_history(self) -> None:
+        """Browse revisions and restore one into the editor."""
         if self._current_id is None:
             return
         editor = self.query_one("#editor", TextArea)
@@ -521,6 +554,7 @@ class DraftsScreen(Screen):
         self.app.push_screen(RevisionsScreen(self.store.revisions(self._current_id), editor.text), restore)
 
     def action_working_dir(self) -> None:
+        """Set the draft's working directory."""
         if self._current_id is None:
             return
         draft = self._drafts[self._current_id]
@@ -537,6 +571,7 @@ class DraftsScreen(Screen):
         )
 
     def action_launch(self) -> None:
+        """Save, show the lint summary, and launch after confirmation."""
         if self._current_id is None:
             return
         if self._current_id in self._buffers:
@@ -560,6 +595,7 @@ class DraftsScreen(Screen):
 
     @work(thread=True, exclusive=True, group="launch")
     def _launch(self, draft: Draft) -> None:
+        """Background thread: run the draft, stream output to the log and record the launch."""
         log = self.query_one("#launch-log", Log)
         write = lambda line: self.app.call_from_thread(log.write_line, line)  # noqa: E731
         self.app.call_from_thread(log.clear)
@@ -591,12 +627,14 @@ class DraftsScreen(Screen):
         self.app.call_from_thread(self.deck.refresh_containers)
 
     def action_abort_launch(self) -> None:
+        """Terminate a running launch."""
         proc = self._launch_proc
         if proc is not None and proc.poll() is None:
             proc.terminate()
             self.notify("Launch aborted (the container may still have been created).", severity="warning")
 
     def action_back(self) -> None:
+        """Return to the main screen, asking first if there are unsaved edits."""
         if not self._buffers:
             self.app.pop_screen()
             return

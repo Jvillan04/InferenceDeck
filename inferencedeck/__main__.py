@@ -10,6 +10,7 @@ from . import updater
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Parse CLI arguments and run the requested command, or start the TUI."""
     parser = argparse.ArgumentParser(prog="inferencedeck", description=__doc__)
     parser.add_argument("--version", action="store_true", help="print version and exit")
     parser.add_argument("--db", help="path to the drafts SQLite database")

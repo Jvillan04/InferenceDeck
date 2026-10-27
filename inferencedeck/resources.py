@@ -38,6 +38,7 @@ def parse_size(value: Any) -> int | None:
 
 
 def fmt_bytes(n: int | float | None) -> str:
+    """Human-readable size in MiB or GiB."""
     if n is None:
         return "?"
     if n >= GIB:
@@ -46,6 +47,7 @@ def fmt_bytes(n: int | float | None) -> str:
 
 
 def _norm_flag(token: str) -> str:
+    """Normalise a CLI flag: strip dashes, lowercase, underscores to hyphens."""
     return token.lstrip("-").replace("_", "-").lower()
 
 
@@ -101,6 +103,7 @@ def parse_flags(argv: list[str]) -> tuple[dict[str, str | bool], list[str]]:
 
 
 def _is_number(tok: str) -> bool:
+    """True if the token parses as a number (so '-1' isn't taken for a flag)."""
     try:
         float(tok)
         return True
@@ -109,6 +112,7 @@ def _is_number(tok: str) -> bool:
 
 
 def _first(flags: dict[str, Any], *names: str) -> Any:
+    """Value of the first flag name present in `flags`."""
     for n in names:
         if n in flags:
             return flags[n]
@@ -116,6 +120,7 @@ def _first(flags: dict[str, Any], *names: str) -> Any:
 
 
 def _as_float(v: Any) -> float | None:
+    """Flag value as a float, or None."""
     try:
         return float(v) if v not in (None, True) else None
     except (TypeError, ValueError):
@@ -123,6 +128,7 @@ def _as_float(v: Any) -> float | None:
 
 
 def _as_int(v: Any) -> int | None:
+    """Flag value as an int, or None."""
     f = _as_float(v)
     return int(f) if f is not None else None
 
@@ -134,6 +140,7 @@ def _as_int(v: Any) -> int | None:
 
 @dataclass
 class EngineConfig:
+    """vLLM/SGLang settings parsed from a container's command line."""
     engine: str | None = None  # "vllm" | "sglang" | None
     model: str | None = None
     gpu_fraction: float | None = None
@@ -151,10 +158,12 @@ class EngineConfig:
 
     @property
     def gpus_needed(self) -> int:
+        """GPUs the engine will use: tensor × pipeline × data parallel size."""
         return max(1, self.tp) * max(1, self.pp) * max(1, self.dp)
 
 
 def parse_engine_args(argv: list[str], hint: str = "") -> EngineConfig:
+    """Parse vLLM or SGLang flags out of a container command (shell wrappers included)."""
     argv = expand_shell_wrappers(list(argv))
     joined = " ".join(argv + [hint]).lower()
     engine = "sglang" if "sglang" in joined else ("vllm" if "vllm" in joined else None)
@@ -201,15 +210,18 @@ def parse_engine_args(argv: list[str], hint: str = "") -> EngineConfig:
 
 @dataclass
 class GpuAllotment:
+    """Which GPUs a container may use: all, specific IDs, or a count."""
     all: bool = False
     ids: list[str] | None = None  # indices or UUIDs
     count: int | None = None
 
     @property
     def requested(self) -> bool:
+        """True if any GPU was requested."""
         return self.all or bool(self.ids) or bool(self.count)
 
     def describe(self) -> str:
+        """Short text form: 'all', '0,1', '2 (any)' or 'none'."""
         if self.all:
             return "all"
         if self.ids:
@@ -221,6 +233,7 @@ class GpuAllotment:
 
 @dataclass
 class ContainerLimits:
+    """Resource limits a container runs with (RAM, CPU, shared memory, GPUs)."""
     memory: int | None = None  # bytes, None = unlimited
     memory_swap: int | None = None
     cpus: float | None = None
@@ -233,10 +246,12 @@ class ContainerLimits:
 
     @property
     def shm_effective(self) -> int:
+        """Shared memory size, using docker's 64 MiB default when unset."""
         return self.shm_size or 64 * MIB  # docker default
 
 
 def _env_to_dict(env: Iterable[str] | dict[str, Any] | None) -> dict[str, str]:
+    """Normalise env given as a list of KEY=VALUE or a dict."""
     if not env:
         return {}
     if isinstance(env, dict):
@@ -249,6 +264,7 @@ def _env_to_dict(env: Iterable[str] | dict[str, Any] | None) -> dict[str, str]:
 
 
 def _gpus_from_visible_devices(env: dict[str, str]) -> GpuAllotment | None:
+    """GPU allotment from NVIDIA_VISIBLE_DEVICES (nvidia runtime), or None if unset."""
     val = env.get("NVIDIA_VISIBLE_DEVICES")
     if val is None:
         return None
@@ -278,6 +294,7 @@ def parse_gpus_flag(value: str) -> GpuAllotment:
 
 
 def limits_from_inspect(attrs: dict[str, Any]) -> ContainerLimits:
+    """Read a container's resource limits from its inspect payload."""
     hc = attrs.get("HostConfig") or {}
     cfg = attrs.get("Config") or {}
     env = _env_to_dict(cfg.get("Env"))
@@ -312,6 +329,7 @@ def limits_from_inspect(attrs: dict[str, Any]) -> ContainerLimits:
 
 
 def argv_from_inspect(attrs: dict[str, Any]) -> list[str]:
+    """A container's full command: entrypoint followed by cmd."""
     cfg = attrs.get("Config") or {}
     return list(cfg.get("Entrypoint") or []) + list(cfg.get("Cmd") or [])
 
@@ -339,6 +357,7 @@ class RunSpec:
 
 
 def parse_docker_run(text: str) -> RunSpec | None:
+    """Parse a `docker run` command into image, name, limits and container command; None if absent."""
     tokens = split_command(text)
     # find "docker run" / "docker container run"
     start = None
@@ -414,6 +433,7 @@ def parse_docker_run(text: str) -> RunSpec | None:
 
 
 def _compose_argv(value: Any) -> list[str]:
+    """A compose command/entrypoint (string or list) as an argv list."""
     if value is None:
         return []
     if isinstance(value, list):
@@ -422,6 +442,7 @@ def _compose_argv(value: Any) -> list[str]:
 
 
 def spec_from_compose_service(name: str, svc: dict[str, Any]) -> RunSpec:
+    """Build a RunSpec from one compose service definition."""
     spec = RunSpec(image=svc.get("image"), name=svc.get("container_name") or name)
     spec.argv = _compose_argv(svc.get("entrypoint")) + _compose_argv(svc.get("command"))
     lim = spec.limits
@@ -469,6 +490,7 @@ def spec_from_compose_service(name: str, svc: dict[str, Any]) -> RunSpec:
 
 @dataclass
 class GpuInfo:
+    """One host GPU as reported by nvidia-smi (memory in MiB)."""
     index: int
     uuid: str
     name: str
@@ -478,11 +500,13 @@ class GpuInfo:
 
     @property
     def free_mib(self) -> int:
+        """Memory not currently used on this GPU."""
         return max(0, self.total_mib - self.used_mib)
 
 
 @dataclass
 class ComputeApp:
+    """A process using GPU memory, as reported by nvidia-smi."""
     pid: int
     gpu_uuid: str
     used_mib: int
@@ -490,12 +514,14 @@ class ComputeApp:
 
 @dataclass
 class GpuSnapshot:
+    """Host GPUs and the processes using them at one point in time."""
     gpus: list[GpuInfo] = field(default_factory=list)
     apps: list[ComputeApp] = field(default_factory=list)
     error: str | None = None
 
     @property
     def available(self) -> bool:
+        """True if any GPUs were found."""
         return bool(self.gpus)
 
     def resolve(self, allot: GpuAllotment) -> list[GpuInfo]:
@@ -524,6 +550,7 @@ class GpuSnapshot:
 
 
 def _csv_rows(text: str) -> list[list[str]]:
+    """Split nvidia-smi CSV output into stripped fields per line."""
     rows = []
     for line in text.strip().splitlines():
         if line.strip():
@@ -532,6 +559,7 @@ def _csv_rows(text: str) -> list[list[str]]:
 
 
 def parse_gpu_csv(text: str) -> list[GpuInfo]:
+    """Parse `nvidia-smi --query-gpu` output."""
     gpus = []
     for row in _csv_rows(text):
         if len(row) < 5:
@@ -553,6 +581,7 @@ def parse_gpu_csv(text: str) -> list[GpuInfo]:
 
 
 def parse_apps_csv(text: str) -> list[ComputeApp]:
+    """Parse `nvidia-smi --query-compute-apps` output."""
     apps = []
     for row in _csv_rows(text):
         if len(row) < 3:
@@ -568,10 +597,12 @@ Runner = Callable[[list[str]], str]
 
 
 def _default_runner(cmd: list[str]) -> str:
+    """Run a command and return its stdout (5 s timeout)."""
     return subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=5).stdout
 
 
 def query_gpus(runner: Runner | None = None) -> GpuSnapshot:
+    """Take a GpuSnapshot with nvidia-smi; returns one with `error` set if unavailable."""
     if runner is None:
         if shutil.which("nvidia-smi") is None:
             return GpuSnapshot(error="nvidia-smi not found")
@@ -612,6 +643,7 @@ SEVERITY_ICON = {"ok": "✅", "info": "ℹ️ ", "warn": "⚠️ ", "error": "�
 
 @dataclass
 class Finding:
+    """One check result with a severity: ok, info, warn or error."""
     severity: str  # ok | info | warn | error
     message: str
 
@@ -637,6 +669,7 @@ def analyze(
     own_usage_mib: dict[str, int] | None = None,
     peers: Iterable[Peer] = (),
 ) -> list[Finding]:
+    """Check an engine config and container limits against host GPUs and other containers."""
     findings: list[Finding] = []
     snapshot = snapshot or GpuSnapshot()
     own_usage_mib = own_usage_mib or {}
@@ -749,6 +782,7 @@ def analyze(
 
 
 def summarize_limits(limits: ContainerLimits) -> list[tuple[str, str]]:
+    """Container limits as (label, value) rows for display."""
     rows = [
         ("GPUs", limits.gpus.describe()),
         ("Memory", fmt_bytes(limits.memory) if limits.memory else "unlimited"),
@@ -763,6 +797,7 @@ def summarize_limits(limits: ContainerLimits) -> list[tuple[str, str]]:
 
 
 def summarize_engine(engine: EngineConfig) -> list[tuple[str, str]]:
+    """Engine settings as (label, value) rows for display."""
     if engine.engine is None:
         return [("Engine", "unknown")]
     rows = [("Engine", engine.engine), ("Model", engine.model or "?")]

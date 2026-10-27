@@ -15,11 +15,13 @@ from .resources import parse_docker_run, split_command
 
 
 class LaunchError(RuntimeError):
+    """A draft can't be launched (empty, unknown kind, docker CLI missing...)."""
     pass
 
 
 @dataclass
 class LaunchPlan:
+    """The exact command to run for a draft, plus warnings and temp-file cleanup."""
     argv: list[str]
     cwd: str | None
     warnings: list[str]
@@ -27,6 +29,7 @@ class LaunchPlan:
 
     @property
     def display(self) -> str:
+        """Short form of the command for the launch log."""
         return " ".join(self.argv) if self.argv[:2] != ["/bin/sh", "-c"] else "sh -c <draft>"
 
 
@@ -46,6 +49,7 @@ def compose_command(docker_bin: str | None = None) -> list[str]:
 
 
 def plan_launch(draft: Draft, *, compose_cmd: list[str] | None = None) -> LaunchPlan:
+    """Turn a draft into a LaunchPlan: `sh -c <body>` for run drafts, `docker compose up -d` for compose."""
     warnings: list[str] = []
     cwd = draft.working_dir if draft.working_dir and os.path.isdir(draft.working_dir) else None
     if draft.working_dir and cwd is None:
