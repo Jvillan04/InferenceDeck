@@ -14,6 +14,7 @@ from . import __version__
 
 
 def find_repo(start: Path | None = None) -> Path | None:
+    """Git checkout that contains this package (editable install), or None."""
     path = (start or Path(__file__)).resolve()
     for candidate in [path, *path.parents]:
         if (candidate / ".git").exists() and (candidate / "pyproject.toml").exists():
@@ -22,12 +23,14 @@ def find_repo(start: Path | None = None) -> Path | None:
 
 
 def _git(repo: Path, *args: str, timeout: int = 60) -> str:
+    """Run a git command in `repo` and return its stdout."""
     return subprocess.run(
         ["git", "-C", str(repo), *args], capture_output=True, text=True, check=True, timeout=timeout
     ).stdout.strip()
 
 
 def version_string(repo: Path | None = None) -> str:
+    """Package version plus the short git commit, e.g. '0.1.0 (abc1234)'."""
     repo = repo or find_repo()
     if repo is None:
         return __version__
@@ -39,6 +42,7 @@ def version_string(repo: Path | None = None) -> str:
 
 @dataclass
 class UpdateStatus:
+    """Result of comparing the install checkout with its upstream branch."""
     repo: Path | None
     branch: str | None = None
     upstream: str | None = None
@@ -50,9 +54,11 @@ class UpdateStatus:
 
     @property
     def available(self) -> bool:
+        """True if upstream has new commits and the check succeeded."""
         return self.error is None and self.behind > 0
 
     def summary(self) -> str:
+        """One-line description of the update status."""
         if self.error:
             return f"Update check failed: {self.error}"
         if not self.behind:
@@ -61,6 +67,7 @@ class UpdateStatus:
 
 
 def check_for_updates(repo: Path | None = None, *, fetch: bool = True) -> UpdateStatus:
+    """Fetch and compare HEAD with its upstream: commits behind/ahead and local changes."""
     repo = repo or find_repo()
     status = UpdateStatus(repo=repo)
     if repo is None:
@@ -84,6 +91,7 @@ def check_for_updates(repo: Path | None = None, *, fetch: bool = True) -> Update
 
 
 def _stream(cmd: list[str], on_line: Callable[[str], None], cwd: Path | None = None) -> int:
+    """Run a command, passing each output line to `on_line`; returns the exit code."""
     on_line(f"$ {' '.join(cmd)}")
     proc = subprocess.Popen(
         cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, stdin=subprocess.DEVNULL

@@ -20,6 +20,7 @@ SECRET_KEY_RE = re.compile(r"TOKEN|KEY|SECRET|PASSWORD|PASSWD|CREDENTIAL", re.IG
 
 @dataclass
 class ComposeFile:
+    """One compose file referenced by a container, with its text or why it couldn't be read."""
     path: str
     content: str | None = None
     error: str | None = None
@@ -27,6 +28,7 @@ class ComposeFile:
 
 @dataclass
 class ComposeInfo:
+    """Compose project, service and files that a container was created from."""
     project: str
     service: str | None
     working_dir: str | None
@@ -34,10 +36,12 @@ class ComposeInfo:
 
     @property
     def readable(self) -> list[ComposeFile]:
+        """The compose files that could be read on this host."""
         return [f for f in self.files if f.content is not None]
 
 
 def compose_info_from_labels(labels: dict[str, str] | None) -> ComposeInfo | None:
+    """Find and read a container's compose files from its compose labels; None if not from compose."""
     labels = labels or {}
     project = labels.get(LABEL_PROJECT)
     if not project:
@@ -83,6 +87,7 @@ DEFAULT_SHM = 64 * 1024 * 1024
 
 
 def _size_flag(n: int) -> str:
+    """Format a byte count the way docker flags accept it (16g, 512m, ...)."""
     for unit, mult in (("g", 1024**3), ("m", 1024**2), ("k", 1024)):
         if n % mult == 0:
             return f"{n // mult}{unit}"
@@ -90,6 +95,7 @@ def _size_flag(n: int) -> str:
 
 
 def _q(value: str) -> str:
+    """Shell-quote a value for the generated command."""
     return shlex.quote(value)
 
 

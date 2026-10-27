@@ -32,6 +32,7 @@ class Report:
 
 
 def count_by_severity(reports: Iterable[Report]) -> dict[str, int]:
+    """Count errors and warnings across reports."""
     counts = {"error": 0, "warn": 0}
     for r in reports:
         for f in r.findings:
@@ -47,6 +48,7 @@ def report_for_container(
     own_usage_mib: dict[str, int] | None = None,
     peers: Iterable[Peer] = (),
 ) -> Report:
+    """Analyse a live container from its inspect payload."""
     name = (attrs.get("Name") or "").lstrip("/")
     image = (attrs.get("Config") or {}).get("Image", "")
     engine = parse_engine_args(argv_from_inspect(attrs), hint=image)
@@ -64,6 +66,7 @@ def report_for_container(
 
 
 def peer_from_inspect(attrs: dict[str, Any]) -> Peer:
+    """Summarise a running container's GPUs and memory fraction for overlap checks."""
     image = (attrs.get("Config") or {}).get("Image", "")
     engine = parse_engine_args(argv_from_inspect(attrs), hint=image)
     return Peer(
@@ -81,6 +84,7 @@ def lint_draft(
     peers: Iterable[Peer] = (),
     existing_names: Iterable[str] = (),
 ) -> list[Report]:
+    """Analyse a draft (one report for a run draft, one per vLLM/SGLang service for compose)."""
     peers = list(peers)
     existing = set(existing_names)
     if kind == "run":
