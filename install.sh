@@ -4,7 +4,7 @@
 #   ./install.sh                 install (or re-install) from this checkout, or clone if run elsewhere
 #   ./install.sh --branch dev    track another branch
 #   ./install.sh --dev           also install test dependencies
-#   ./install.sh --uninstall     remove the app (keeps your drafts database)
+#   ./install.sh --uninstall     same as ./uninstall.sh: remove the app, keep your drafts database
 #   ./install.sh --uninstall --purge   remove everything, including drafts
 #
 # Layout (override with env vars):
@@ -42,20 +42,21 @@ while [ $# -gt 0 ]; do
 done
 
 # --------------------------------------------------------------------------- uninstall
+# Kept for compatibility: the real logic (with a confirmation prompt) lives in uninstall.sh.
 if [ "$UNINSTALL" -eq 1 ]; then
-    link="$BIN_DIR/inferencedeck"
-    if [ -L "$link" ] && [ "$(readlink "$link")" = "$VENV/bin/inferencedeck" ]; then
-        rm -f "$link"
-        info "removed $link"
+    here=""
+    if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
+        here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     fi
-    if [ "$PURGE" -eq 1 ]; then
-        rm -rf "$PREFIX"
-        info "removed $PREFIX (including drafts database)"
-    else
-        rm -rf "$VENV" "$CLONE"
-        info "removed $VENV and $CLONE; drafts kept in $PREFIX (use --purge to delete them)"
-    fi
-    exit 0
+    for script in "$here/uninstall.sh" "$CLONE/uninstall.sh"; do
+        if [ -f "$script" ]; then
+            if [ "$PURGE" -eq 1 ]; then
+                exec bash "$script" --purge
+            fi
+            exec bash "$script"
+        fi
+    done
+    die "uninstall.sh not found next to install.sh or in $CLONE"
 fi
 
 # --------------------------------------------------------------------------- prerequisites

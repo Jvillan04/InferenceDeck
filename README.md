@@ -14,8 +14,7 @@ inferencedeck
 ```
 
 `install.sh` checks for Python ≥ 3.10, git, the docker CLI/daemon access and `nvidia-smi`, and can be
-re-run safely. Options: `--branch <name>`, `--dev` (test deps), `--uninstall` (keeps drafts),
-`--uninstall --purge` (deletes drafts too). Run outside a checkout, it clones into
+re-run safely. Options: `--branch <name>`, `--dev` (test deps). Run outside a checkout, it clones into
 `~/.local/share/inferencedeck/src` with your own git credentials.
 
 ## Update
@@ -29,6 +28,18 @@ Any of these does `git pull --ff-only` → `pip install -e` → drafts DB migrat
 The app also checks quietly once a day at startup and shows a notification when commits are available
 (set `INFERENCEDECK_NO_UPDATE_CHECK=1` to turn this off). Updates are refused if the install checkout has
 local changes. Drafts survive updates: the schema is versioned and only ever migrated forward.
+
+## Uninstall
+
+```bash
+inferencedeck uninstall            # remove the app, keep your drafts
+inferencedeck uninstall --purge    # remove everything, including the drafts database
+```
+
+It lists what it will delete (with sizes) and asks before removing anything; add `--yes` to skip the
+question. The same script is available as `./uninstall.sh` in the repo (and `./install.sh --uninstall`
+still works). It removes the virtualenv, the cloned source and the `~/.local/bin/inferencedeck` link. A
+checkout you installed from, your containers and your images are never touched.
 
 ## Main screen
 

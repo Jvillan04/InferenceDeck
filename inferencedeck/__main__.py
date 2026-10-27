@@ -1,4 +1,4 @@
-"""Command line entry point: ``inferencedeck [update|migrate] [--version]``."""
+"""Command line entry point: ``inferencedeck [update|migrate|uninstall] [--version]``."""
 
 from __future__ import annotations
 
@@ -18,6 +18,9 @@ def main(argv: list[str] | None = None) -> int:
     p_update = sub.add_parser("update", help="pull the latest version and reinstall")
     p_update.add_argument("--check", action="store_true", help="only report whether an update is available")
     sub.add_parser("migrate", help="apply pending drafts database migrations")
+    p_uninstall = sub.add_parser("uninstall", help="remove InferenceDeck (keeps drafts unless --purge)")
+    p_uninstall.add_argument("--purge", action="store_true", help="also delete the drafts database")
+    p_uninstall.add_argument("-y", "--yes", action="store_true", help="don't ask for confirmation")
     args = parser.parse_args(argv)
 
     if args.version:
@@ -32,6 +35,17 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  {c}")
             return 1 if status.error else 0
         return updater.apply_update()
+
+    if args.command == "uninstall":
+        repo = updater.find_repo()
+        script = repo / "uninstall.sh" if repo else None
+        if script is None or not script.is_file():
+            print("uninstall.sh not found; run it from your InferenceDeck checkout instead.", file=sys.stderr)
+            return 1
+        flags = (["--purge"] if args.purge else []) + (["--yes"] if args.yes else [])
+        # Replace this process: the script deletes the virtualenv we're running from.
+        os.execv("/bin/bash", ["bash", str(script), *flags])
+        return 1  # only reached if execv is stubbed out (tests)
 
     if args.command == "migrate":
         from .drafts import DraftStore
