@@ -70,8 +70,20 @@ Screen { background: $surface; }
 #lint-panel { height: 1fr; max-height: 14; border: round $primary-darken-2; }
 #launch-log { height: 8; }
 ContainerItem.-pending Label { color: $warning; }
-/* Thin rule under each sidebar row so neighbouring containers/drafts don't run together. */
-ContainerItem, DraftItem { border-bottom: solid $primary 30%; }
+/* Rule under each sidebar row so neighbouring containers/drafts don't run together. */
+ContainerItem, DraftItem { border-bottom: heavy $primary 40%; }
+/* Paint the hover/cursor colours on the row's label, not the row, so they never cover the rule. */
+ListView > ContainerItem.-hovered, ListView > DraftItem.-hovered,
+ListView > ContainerItem.-highlight, ListView > DraftItem.-highlight,
+ListView:focus > ContainerItem.-highlight, ListView:focus > DraftItem.-highlight { background: transparent; }
+ContainerItem Label, DraftItem Label { width: 100%; }
+ListView > ContainerItem.-hovered Label, ListView > DraftItem.-hovered Label { background: $block-hover-background; }
+ListView > ContainerItem.-highlight Label, ListView > DraftItem.-highlight Label {
+    color: $block-cursor-blurred-foreground; background: $block-cursor-blurred-background;
+}
+ListView:focus > ContainerItem.-highlight Label, ListView:focus > DraftItem.-highlight Label {
+    color: $block-cursor-foreground; background: $block-cursor-background; text-style: $block-cursor-text-style;
+}
 ModalScreen { align: center middle; }
 .dialog { width: 70; height: auto; max-height: 90%; border: thick $primary; background: $panel; padding: 1 2; }
 .dialog.wide { width: 90%; height: 85%; }
