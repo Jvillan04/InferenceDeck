@@ -14,7 +14,7 @@ drafts editor and dialogs: `inferencedeck/screens.py`. See README.md for feature
 
 ```bash
 pytest -q                          # no Docker daemon or GPU needed
-shellcheck install.sh update.sh
+shellcheck install.sh update.sh uninstall.sh
 ```
 
 ## Commits
