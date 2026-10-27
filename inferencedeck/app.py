@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import functools
 import os
 import threading
 import time
@@ -18,6 +19,7 @@ from textual import on, work
 from textual.app import App, ComposeResult, SystemCommand
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.css.query import NoMatches
 from textual.screen import Screen
 from textual.widgets import (
     Footer,
@@ -81,6 +83,29 @@ ModalScreen { align: center middle; }
 #update-log { height: 1fr; }
 .hidden { display: none; }
 """
+
+
+def ignore_if_unmounted(func):
+    """Let a background task that finishes during shutdown exit quietly instead of failing on removed widgets."""
+    if asyncio.iscoroutinefunction(func):
+
+        @functools.wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            try:
+                return await func(*args, **kwargs)
+            except NoMatches:
+                return None
+
+        return async_wrapper
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except NoMatches:
+            return None
+
+    return wrapper
 
 
 def short_image(image: str) -> str:
@@ -248,6 +273,7 @@ class InferenceDeckApp(App[str | None]):
             self._scan_running = True
             self.run_worker(self._scan(), group="scan")
 
+    @ignore_if_unmounted
     async def _scan(self) -> None:
         """List containers off the UI thread and apply the result; report Docker outages."""
         try:
@@ -384,6 +410,7 @@ class InferenceDeckApp(App[str | None]):
         if worker.is_cancelled:
             return
 
+        @ignore_if_unmounted
         def apply() -> None:
             current = self.highlighted_info()
             if current is None or current.id != info.id:
@@ -554,6 +581,7 @@ class InferenceDeckApp(App[str | None]):
             item.set_info(self._infos.get(info.id, info), self._pending[info.id])
         self.run_worker(self._do_action(info, verb), group=f"action-{info.id}")
 
+    @ignore_if_unmounted
     async def _do_action(self, info: ContainerInfo, verb: str) -> None:
         """Run start/stop/restart off the UI thread, then refresh the row, tabs and logs."""
         try:
@@ -614,6 +642,7 @@ class InferenceDeckApp(App[str | None]):
         self._stream_logs(container_id)
 
     @work(thread=True, exclusive=True, group="logs")
+    @ignore_if_unmounted
     def _stream_logs(self, container_id: str) -> None:
         """Background thread: read the log stream and write complete lines to the Logs tab."""
         worker = get_current_worker()
