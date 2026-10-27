@@ -67,6 +67,8 @@ Screen { background: $surface; }
 #lint-panel { height: 1fr; max-height: 14; border: round $primary-darken-2; }
 #launch-log { height: 8; }
 ContainerItem.-pending Label { color: $warning; }
+/* Thin rule under each sidebar row so neighbouring containers/drafts don't run together. */
+ContainerItem, DraftItem { border-bottom: solid $primary 30%; }
 ModalScreen { align: center middle; }
 .dialog { width: 70; height: auto; max-height: 90%; border: thick $primary; background: $panel; padding: 1 2; }
 .dialog.wide { width: 90%; height: 85%; }
