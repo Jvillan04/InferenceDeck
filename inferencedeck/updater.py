@@ -122,7 +122,8 @@ def apply_update(
         [python, "-m", "inferencedeck", "migrate"],
     ]
     for cmd in steps:
-        code = _stream(cmd, on_line)
+        # cwd=repo so `python -m inferencedeck migrate` imports the freshly pulled code.
+        code = _stream(cmd, on_line, cwd=status.repo)
         if code != 0:
             on_line(f"Step failed with exit code {code}.")
             return code

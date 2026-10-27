@@ -100,7 +100,7 @@ class DraftStore:
         self._conn = sqlite3.connect(str(self.path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON")
-        self.migrate()
+        self.migrations_applied = self.migrate()
 
     # -- schema --------------------------------------------------------------------
 

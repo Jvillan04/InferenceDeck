@@ -35,15 +35,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "migrate":
         from .drafts import DraftStore
 
-        store = DraftStore(args.db)
-        applied = store.migrate()
-        print(f"{store.path}: schema v{store.schema_version} ({applied} migration(s) applied)")
+        store = DraftStore(args.db)  # opening the store applies pending migrations
+        print(f"{store.path}: schema v{store.schema_version} ({store.migrations_applied} migration(s) applied)")
         return 0
 
     from .app import InferenceDeckApp
 
     result = InferenceDeckApp(db_path=args.db).run()
     if result == "restart":  # requested after an in-app update: re-exec into the new code
+        if os.path.isfile(sys.argv[0]) and os.access(sys.argv[0], os.X_OK):
+            os.execv(sys.argv[0], sys.argv)  # the console script
         os.execv(sys.executable, [sys.executable, "-m", "inferencedeck", *sys.argv[1:]])
     return 0
 
