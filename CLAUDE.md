@@ -16,3 +16,7 @@ drafts editor and dialogs: `inferencedeck/screens.py`. See README.md for feature
 pytest -q                          # no Docker daemon or GPU needed
 shellcheck install.sh update.sh
 ```
+
+## Commits
+
+- Never include `Claude-Session:` lines or claude.ai session links in commit messages or PR bodies.
