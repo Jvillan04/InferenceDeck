@@ -118,3 +118,7 @@ temporary SQLite DB and Textual's Pilot.
 Layout: `backend.py` (Docker SDK), `resources.py` (flag/limit parsing, nvidia-smi, checks), `lint.py`,
 `compose.py` (compose discovery, `docker run` reconstruction), `drafts.py` (SQLite store + migrations),
 `launcher.py`, `updater.py`, `app.py` (main screen), `screens.py` (drafts editor and dialogs).
+
+## License
+
+[MIT](LICENSE)
