@@ -51,7 +51,8 @@ from .screens import (
 )
 
 PENDING_LABEL = {"start": "starting…", "stop": "stopping…", "restart": "restarting…"}
-UPDATE_CHECK_INTERVAL = 24 * 3600
+UPDATE_FETCH_INTERVAL = 24 * 3600  # contact the git remote at most once a day
+UPDATE_RECHECK_SECONDS = 6 * 3600  # while running, re-check this often (fetching only if a day has passed)
 
 CSS = """
 Screen { background: $surface; }
@@ -185,6 +186,7 @@ class InferenceDeckApp(App[str | None]):
         self.gpu_snapshot: GpuSnapshot = GpuSnapshot(error="not queried yet")
         self.peers: list[Peer] = []
 
+        self._notified_behind = 0  # commit count we last showed an update notice for
         self._log_lock = threading.Lock()
         self._log_stream: Any = None
         self._log_container_id: str | None = None
@@ -219,6 +221,7 @@ class InferenceDeckApp(App[str | None]):
         self.set_interval(self.gpu_interval, self.refresh_host)
         if self.check_updates_on_start:
             self.quiet_update_check()
+            self.set_interval(UPDATE_RECHECK_SECONDS, self.quiet_update_check)
 
     def on_unmount(self) -> None:
         """Stop the log stream on exit."""
@@ -755,16 +758,28 @@ class InferenceDeckApp(App[str | None]):
 
     @work(thread=True, exclusive=True, group="update-check")
     def quiet_update_check(self) -> None:
-        """At most once a day, check for updates and show a notice if any."""
+        """Check for updates in the background: local refs on every run, a network fetch at most once a day."""
+        # Instant and offline: compares against the upstream refs from the last fetch, so an update found
+        # earlier is still shown on every launch, not only on the day it was found.
+        self.call_from_thread(self._show_update_status, updater.check_for_updates(fetch=False))
         try:
             last = float(self.store.get_meta("last_update_check", "0") or 0)
         except ValueError:
             last = 0
-        if time.time() - last < UPDATE_CHECK_INTERVAL:
+        if time.time() - last < UPDATE_FETCH_INTERVAL:
             return
-        status = updater.check_for_updates()
-        self.store.set_meta("last_update_check", str(time.time()))
-        if status.available:
-            self.call_from_thread(
-                self.notify, f"{status.summary()} Press U to update.", title="Update available", timeout=10
-            )
+        status = updater.check_for_updates(fetch=True)
+        if status.error is None:  # on failure (offline...), try again next time instead of waiting a day
+            self.store.set_meta("last_update_check", str(time.time()))
+        self.call_from_thread(self._show_update_status, status)
+
+    def _show_update_status(self, status: updater.UpdateStatus) -> None:
+        """Show a lasting header marker when an update is available, plus a one-time notification."""
+        if not status.available:
+            if status.error is None:
+                self.sub_title = self.SUB_TITLE
+            return
+        self.sub_title = f"{self.SUB_TITLE}  ·  ⬆ update available — press U"
+        if status.behind != self._notified_behind:
+            self._notified_behind = status.behind
+            self.notify(f"{status.summary()} Press U to update.", title="Update available", timeout=15)
