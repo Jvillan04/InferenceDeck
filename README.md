@@ -26,8 +26,11 @@ Any of these does `git pull --ff-only` → `pip install -e` → drafts DB migrat
 - `inferencedeck update` (`--check` only reports)
 - `./update.sh`
 
-The app also checks quietly once a day at startup and shows a notification when commits are available
-(set `INFERENCEDECK_NO_UPDATE_CHECK=1` to turn this off). Updates are refused if the install checkout has
+When an update is available the app tells you: a notification pops up once, and the header keeps showing
+**⬆ update available — press U** until you update. It checks in the background on every start and every
+6 hours while running, without network access, against what it last fetched. It contacts GitHub at most
+once a day, so an update found earlier is still shown on later launches. Set
+`INFERENCEDECK_NO_UPDATE_CHECK=1` to turn checks off. Updates are refused if the install checkout has
 local changes. Drafts survive updates: the schema is versioned and only ever migrated forward.
 
 ## Main screen
