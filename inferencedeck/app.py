@@ -50,6 +50,9 @@ from .screens import (
     set_language,
 )
 
+# App-level key actions that act on the highlighted container, so they make no sense on other screens.
+MAIN_SCREEN_ACTIONS = {"start", "stop", "restart", "attach_logs", "save_as_draft", "drafts"}
+
 PENDING_LABEL = {"start": "starting…", "stop": "stopping…", "restart": "restarting…"}
 UPDATE_FETCH_INTERVAL = 24 * 3600  # contact the git remote at most once a day
 UPDATE_RECHECK_SECONDS = 6 * 3600  # while running, re-check this often (fetching only if a day has passed)
@@ -238,6 +241,12 @@ class InferenceDeckApp(App[str | None]):
     def on_unmount(self) -> None:
         """Stop the log stream on exit."""
         self._close_log_stream()
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        """Container keys only work on the main screen, not under the drafts screen or a dialog."""
+        if action in MAIN_SCREEN_ACTIONS and len(self.screen_stack) > 1:
+            return False  # also hides them from the footer
+        return True
 
     def get_system_commands(self, screen: Screen) -> Iterable[SystemCommand]:
         """Add InferenceDeck actions to the command palette."""

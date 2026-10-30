@@ -120,3 +120,21 @@ async def test_save_as_draft_and_open_drafts(store):
         (draft,) = store.list_drafts()
         assert draft.kind == "run" and draft.source_container == "vllm-a"
         assert "secret" not in draft.body and "--model m" in draft.body
+
+
+async def test_container_keys_do_nothing_on_drafts_screen(store):
+    store.create("d1", "run", "docker run -d img\n")
+    backend = FakeBackend([make_attrs("vllm-a", "vllm/vllm-openai")])
+    app = make_app(backend, store)
+    async with app.run_test() as pilot:
+        await wait_for(pilot, lambda: labels(app))
+        await pilot.press("d")
+        assert await wait_for(pilot, lambda: isinstance(app.screen, DraftsScreen))
+        app.screen.query_one("#draft-list").focus()
+        await pilot.press("t", "y", "s", "r", "y")
+        await pilot.pause(0.3)
+        assert isinstance(app.screen, DraftsScreen)  # no confirm dialog opened
+        assert backend.calls == []
+        footer_actions = {b.binding.action for b in app.screen.active_bindings.values() if b.binding.show}
+        assert not {"start", "stop", "restart", "attach_logs", "save_as_draft"} & footer_actions
+
