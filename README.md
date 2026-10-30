@@ -4,6 +4,27 @@ A terminal UI ([Textual](https://textual.textualize.io/) + Docker SDK) for runni
 containers: find them, start/stop/restart them, tail their logs, see the compose file or `docker run`
 behind them, check their GPU/RAM budget, and keep editable drafts of launch configs.
 
+![InferenceDeck main screen: container list with status emojis and the Details tab](docs/screenshots/overview.png)
+
+<details>
+<summary><b>More screenshots</b>: resource checks, live logs, compose view, drafts editor</summary>
+
+**Resources:** engine flags, container limits, host GPUs from `nvidia-smi`, and checks that catch problems before they OOM
+![Resources tab showing GPU usage and failed checks](docs/screenshots/resources.png)
+
+**Logs:** live tail of the selected container
+![Logs tab following a vLLM server](docs/screenshots/logs.png)
+
+**Compose / Run:** the compose file a container came from (or a reconstructed `docker run`)
+![Compose tab showing the compose file of an SGLang container](docs/screenshots/compose.png)
+
+**Drafts:** edit launch configs, linted as you type, with revision history
+![Drafts editor with a docker run command and lint results](docs/screenshots/drafts.png)
+
+</details>
+
+<sub>Screenshots use made-up demo data: `python scripts/screenshots.py && node scripts/svg_to_png.mjs`.</sub>
+
 ## Install
 
 ```bash
@@ -125,6 +146,9 @@ from your shell's environment at launch.
 ./install.sh --dev      # or: pip install -e '.[dev]'
 pytest -q
 ```
+
+To refresh the README screenshots after a UI change, run `python scripts/screenshots.py` (uses demo data, no Docker
+needed) and then `node scripts/svg_to_png.mjs` (needs Playwright).
 
 The tests don't need a Docker daemon or a GPU: they use a fake backend, canned `nvidia-smi` output, a
 temporary SQLite DB and Textual's Pilot.
